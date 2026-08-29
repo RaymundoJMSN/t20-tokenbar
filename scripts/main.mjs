@@ -4,6 +4,7 @@
  */
 import { MonksTokenBar } from "../../monks-tokenbar/monks-tokenbar.js";
 import { TokenBar } from "../../monks-tokenbar/apps/tokenbar.js";
+import { EditStats } from "../../monks-tokenbar/apps/editstats.js";
 import { Tormenta20Rolls } from "../../monks-tokenbar/systems/tormenta20-rolls.js";
 
 const MOD = "t20-tokenbar";
@@ -14,6 +15,31 @@ const temInspiracao = () => game.modules.get("t20-inspiracao")?.active === true;
 Hooks.once("init", () => {
   console.log(`${MOD} | init`);
   patchesDoSistema();
+
+  game.settings.register(MOD, "stats-jogador", {
+    scope: "world",
+    config: false,
+    type: Object,
+    default: []
+  });
+
+  game.settings.register(MOD, "barra-estimativa", {
+    name: "Barra de PV vira estimativa (jogadores)",
+    hint: "Para quem não é mestre, a barra 1 dos tokens na tokenbar usa a cor e a faixa do Health Estimate em vez da fração exata de PV.",
+    scope: "world",
+    config: true,
+    type: Boolean,
+    default: true
+  });
+
+  game.settings.registerMenu(MOD, "editStatsJogador", {
+    name: "Stats dos jogadores",
+    label: "Editar stats dos jogadores",
+    hint: "Lista de stats que quem não é mestre vê na tokenbar. Vazia = a mesma lista do mestre. Aceita @estimate (texto do Health Estimate).",
+    icon: "fas fa-users",
+    restricted: true,
+    type: EditStatsJogador
+  });
 });
 
 function patchesDoSistema() {
@@ -35,4 +61,43 @@ function patchesDoSistema() {
       "system.attributes.nivel.xp.value": atual + (Number(msgactor.xp) || 0)
     });
   };
+}
+
+/* ---- Editor da lista de stats dos jogadores (reusa o EditStats do monks inteiro) ----
+   Overrides mínimos e por quê:
+   - construtor passa {} (não null) — onSubmitForm/resetDefaults do monks fazem
+     Object.keys(this.object), que explode com null;
+   - onSubmitForm do pai gravaria em monks-tokenbar.stats (a lista do MESTRE) quando o
+     objeto é vazio — o nosso grava no nosso setting;
+   - resetDefaults aqui = lista vazia = jogadores voltam a ver a lista do mestre;
+   - get title() — o pai tem getter que ignora window.title das options. */
+class EditStatsJogador extends EditStats {
+  constructor(object, options = {}) {
+    super({}, options);
+    const salvos = game.settings.get(MOD, "stats-jogador");
+    this.stats = (Array.isArray(salvos) ? foundry.utils.duplicate(salvos) : [])
+      .map((s) => ({ ...s, id: s.id || foundry.utils.randomID() }));
+    this.attributes = [...(this.attributes ?? []), "@estimate"];
+  }
+
+  static DEFAULT_OPTIONS = {
+    id: "editstats-jogador",
+    actions: { resetDefault: EditStatsJogador.resetDefaults },
+    form: { handler: EditStatsJogador.onSubmitForm, closeOnSubmit: true }
+  };
+
+  get title() {
+    return "Stats dos jogadores";
+  }
+
+  static onSubmitForm() {
+    game.settings.set(MOD, "stats-jogador", this.stats);
+    MonksTokenBar.tokenbar?.refresh();
+    this.submitting = true;
+  }
+
+  static resetDefaults() {
+    this.stats = [];
+    this.render(true);
+  }
 }
