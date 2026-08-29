@@ -269,7 +269,7 @@ nivelAlvo: n+1 }`. Respeita o setting `send-levelup-whisper` do próprio monks (
 sem setting novo, e a semântica é exatamente a mesma.
 
 Anti-duplicata: antes de criar, varre as últimas 50 mensagens de `game.messages` procurando um card
-do módulo com o mesmo `ator` e `nivelAlvo` ainda não resolvido.
+do módulo com o mesmo `ator` e `nivelAlvo`.
 
 ### O botão
 
@@ -280,8 +280,13 @@ do módulo com o mesmo `ator` e `nivelAlvo` ainda não resolvido.
 2. `classes = regras.classesDe(actor.items)`; se vazio, avisa "sem classe na ficha" e para;
 3. se houver mais de uma, `DialogV2` pra escolher qual sobe; se houver uma só, sobe direto;
 4. `classe.update({ "system.niveis": niveis + 1 })`;
-5. marca o card como resolvido (`flag.resolvido = true`, botão vira texto) e posta a confirmação
-   pública: `"Fulano subiu para o nível 4 (Guerreiro 4)"`.
+5. posta a confirmação pública: `"Fulano subiu para o nível 4 (Guerreiro 4)"`.
+
+Estado "resolvido" do card é **derivado, não gravado**: no `renderChatMessageHTML`, se
+`nivel.value >= nivelAlvo` o botão vira o texto "✔ nível N alcançado". Gravar flag na mensagem não
+funcionaria — o card é criado pelo GM e jogador não pode atualizar mensagem alheia (exigiria
+socket). Derivar do ator dá o mesmo resultado sem escrita nenhuma; um clique repetido antes do
+re-render cai na revalidação do passo 1.
 
 PV, PM, perícias novas e poder de classe seguem manuais na ficha — fora do escopo por decisão
 explícita (o assistente completo exigiria mapear os compêndios de classe do T20).
