@@ -101,3 +101,83 @@ class EditStatsJogador extends EditStats {
     this.render(true);
   }
 }
+
+/* ---- Estimativa do healthEstimate ----
+   null = módulo ausente, token fora do canvas, sem PV numérico, ou escondido pelas regras do
+   próprio healthEstimate (espelha _handleOverlay — senão o mod vira bypass da visibilidade). */
+function estimativa(tokenDoc) {
+  const he = game.healthEstimate;
+  const t = tokenDoc?.object; // getEstimation exige o placeable, não o TokenDocument
+  if (!he || !t?.actor) return null;
+  try {
+    if (he.breakOverlayRender(t)) return null;
+    if (!game.user.isGM && he.hideEstimate(t)) return null;
+    const { desc, color, stroke } = he.getEstimation(t);
+    if (desc === undefined || desc === "") return null;
+    const fraction = Number(he.getFraction(t));
+    const { estimate } = he.getStage(t, fraction) ?? {};
+    return { desc, color, stroke, valor: estimate?.value ?? Math.round(fraction * 100) };
+  } catch {
+    return null; // getFraction lança pra token sem PV
+  }
+}
+
+const esc = (s) => Handlebars.escapeExpression(String(s ?? ""));
+
+/* Mesmo markup do token-list.hbs do monks, pro CSS dele valer igual. */
+function statHTML(stat, valor, cor) {
+  const escondido = valor == null && !game.settings.get(MTB, "show-undefined");
+  const style = `${escondido ? "visibility:hidden;" : ""}color:${cor || "#f0f0f0"}`;
+  const icone = stat.icon ? `<i class="fas ${esc(stat.icon)}"></i>` : "";
+  return `<div class="token-stat flexrow" data-stat="${esc(stat.stat)}" style="${style}">${icone}<span>${esc(valor ?? "")}</span></div>`;
+}
+
+/* ---- Stats do jogador: reescreve .token-stats de cada token depois do render ----
+   Por que DOM e não patch no pipeline: updateEntry lê os stats por ficha ANTES do fallback
+   global (apps/tokenbar.js:564) — ator com stats customizados entregaria a lista do mestre
+   (PV exato) pro jogador por qualquer patch de getter. */
+Hooks.on("renderTokenBar", (app, element) => {
+  if (game.user.isGM) return;
+  const lista = game.settings.get(MOD, "stats-jogador");
+  const temLista = Array.isArray(lista) && lista.some((s) => s.stat);
+  const pintarBarra = game.settings.get(MOD, "barra-estimativa");
+
+  for (const li of element.querySelectorAll("li.token")) {
+    const id = li.dataset.tokenId || li.dataset.actorId;
+    const entry = app.entries.find((e) => e.token?.id === id || e.actor?.id === id);
+    if (!entry?.actor) continue;
+    const est = estimativa(entry.token);
+
+    if (temLista) {
+      const bloco = li.querySelector(".token-stats");
+      if (bloco) {
+        bloco.innerHTML = lista
+          .filter((s) => s.stat)
+          .map((s) => {
+            if (s.stat === "@estimate") return statHTML(s, est?.desc ?? null, est?.color);
+            const v =
+              TokenBar.processStat(s.stat, entry.actor.system) ||
+              TokenBar.processStat(s.stat, entry.token);
+            return statHTML(s, v, s.color);
+          })
+          .join("");
+      }
+    }
+
+    /* Barra 1 vira a estimativa: cor E largura pela faixa — largura com a fração real
+       continuaria vazando o PV que o texto acabou de esconder. */
+    if (pintarBarra && est && entry.token?.getBarAttribute("bar1")?.attribute === "attributes.pv") {
+      const barra = li.querySelector('.resource[resource="1"] .bar');
+      if (barra) {
+        barra.style.backgroundColor = est.color;
+        barra.style.width = `${Math.clamp(est.valor, 0, 100)}%`;
+      }
+    }
+  }
+});
+
+/* O monks só re-renderiza pelo diff da lista DELE; PV pode nem estar nela. */
+Hooks.on("updateActor", (actor, changes) => {
+  if (foundry.utils.hasProperty(changes, "system.attributes.pv"))
+    MonksTokenBar.tokenbar?.render();
+});
