@@ -181,3 +181,60 @@ Hooks.on("updateActor", (actor, changes) => {
   if (foundry.utils.hasProperty(changes, "system.attributes.pv"))
     MonksTokenBar.tokenbar?.render();
 });
+
+/* ---- Inspiração ✨N (t20-inspiracao) na caixinha de coroa do monks ----
+   O .inspiration-icon existe pra todo token mas só liga com inspiration="true"
+   (css/tokenbar.css:411) — e no T20 o booleano do dnd5e nunca liga. Roda pra todo
+   usuário: mestre também vê ✨N. */
+Hooks.on("renderTokenBar", (app, element) => {
+  if (!temInspiracao() || !game.settings.get(MTB, "show-inspiration")) return;
+  const cap = game.settings.get("t20-inspiracao", "capMax");
+  for (const li of element.querySelectorAll("li.token")) {
+    const id = li.dataset.tokenId || li.dataset.actorId;
+    const entry = app.entries.find((e) => e.token?.id === id || e.actor?.id === id);
+    const icone = li.querySelector(".inspiration-icon");
+    if (!entry?.actor || !icone) continue;
+    const pontos = Number(entry.actor.getFlag("t20-inspiracao", "pontos")) || 0;
+    icone.setAttribute("inspiration", pontos > 0 ? "true" : "");
+    icone.innerHTML =
+      `<i class="fas fa-crown"></i>` +
+      (pontos > 0 ? `<span class="t20tb-n">${pontos}</span>` : "");
+    icone.dataset.tooltip = `${esc(entry.actor.name)}: ${pontos}/${cap} inspirações`;
+  }
+});
+
+Hooks.on("updateActor", (actor, changes) => {
+  if (foundry.utils.hasProperty(changes, "flags.t20-inspiracao.pontos"))
+    MonksTokenBar.tokenbar?.render();
+});
+
+/* Menu de contexto (hook público do monks — apps/tokenbar.js:294; li é HTMLElement). */
+Hooks.on("getTokenbarContextOptionsTokenBar", (app, options) => {
+  if (!temInspiracao()) return;
+  const atorDe = (li) => {
+    const id = li.dataset.tokenId || li.dataset.actorId;
+    return app.entries.find((e) => e.token?.id === id || e.actor?.id === id)?.actor;
+  };
+  const mudar = (li, delta) => {
+    const a = atorDe(li);
+    if (!a) return;
+    const cap = game.settings.get("t20-inspiracao", "capMax");
+    const p = Math.clamp((Number(a.getFlag("t20-inspiracao", "pontos")) || 0) + delta, 0, cap);
+    a.setFlag("t20-inspiracao", "pontos", p);
+  };
+  const soGMPersonagem = (li) => game.user.isGM && atorDe(li)?.type === "character";
+  options.push(
+    {
+      name: "Dar inspiração ✨",
+      icon: '<i class="fas fa-crown"></i>',
+      condition: soGMPersonagem,
+      callback: (li) => mudar(li, 1)
+    },
+    {
+      name: "Tirar inspiração",
+      icon: '<i class="fas fa-crown"></i>',
+      condition: soGMPersonagem,
+      callback: (li) => mudar(li, -1)
+    }
+  );
+});
