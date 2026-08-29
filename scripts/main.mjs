@@ -6,6 +6,7 @@ import { MonksTokenBar } from "../../monks-tokenbar/monks-tokenbar.js";
 import { TokenBar } from "../../monks-tokenbar/apps/tokenbar.js";
 import { EditStats } from "../../monks-tokenbar/apps/editstats.js";
 import { Tormenta20Rolls } from "../../monks-tokenbar/systems/tormenta20-rolls.js";
+import { podeSubir, classesDe } from "./regras.mjs";
 
 const MOD = "t20-tokenbar";
 const MTB = "monks-tokenbar";
@@ -52,7 +53,7 @@ function patchesDoSistema() {
   };
 
   /* Só soma o XP. O sussurro original do monks dizia "você subiu de nível" e não subia nada;
-     quem oferece o nível agora é o hook updateActor (ver nivel.js nesta mesma pasta). */
+     quem oferece o nível agora é o hook updateActor (verificarNivel, mais abaixo). */
   Tormenta20Rolls.prototype.assignXP = async function (msgactor) {
     const actor = game.actors.get(msgactor.id);
     if (!actor) return;
@@ -237,4 +238,91 @@ Hooks.on("getTokenbarContextOptionsTokenBar", (app, options) => {
       callback: (li) => mudar(li, -1)
     }
   );
+});
+
+/* ---- Subir de nível de verdade ----
+   Nível no T20 é DERIVADO: prepareBaseData soma system.niveis dos itens classe — escrever
+   nivel.value não persiste. Subir = +1 no item; o sistema recalcula nível/treino/CD.
+   "Resolvido" do card é derivado (nivel >= alvo), nunca gravado: o card é do GM e jogador
+   não pode atualizar mensagem alheia. */
+async function verificarNivel(actor) {
+  if (game.users.activeGM?.id !== game.user.id) return;
+  if (actor.type !== "character") return;
+  if (!game.settings.get(MTB, "send-levelup-whisper")) return;
+  const n = actor.system.attributes.nivel;
+  if (!podeSubir(n.value, n.xp.value, n.xp.proximo)) return;
+  const nivelAlvo = n.value + 1;
+
+  const repetido = game.messages.contents.slice(-50).some((m) => {
+    const f = m.flags?.[MOD];
+    return f && f.ator === actor.uuid && f.nivelAlvo === nivelAlvo;
+  });
+  if (repetido) return;
+
+  const dest = game.users
+    .filter((u) => u.isGM || actor.testUserPermission(u, "OWNER"))
+    .map((u) => u.id);
+  await ChatMessage.create({
+    content: `<div class="t20tb-card">✨ <b>${esc(actor.name)}</b> tem XP para o nível ${nivelAlvo} (${n.xp.value}/${n.xp.proximo} XP). <button type="button" class="t20tb-levelup">Subir de nível</button></div>`,
+    whisper: dest,
+    flags: { [MOD]: { ator: actor.uuid, nivelAlvo } }
+  });
+}
+
+Hooks.on("updateActor", (actor, changes) => {
+  if (foundry.utils.hasProperty(changes, "system.attributes.nivel.xp.value"))
+    verificarNivel(actor);
+});
+
+async function escolherClasse(classes) {
+  if (classes.length === 1) return classes[0];
+  const opcoes = classes
+    .map((c) => `<option value="${c.id}">${esc(c.nome)} (nível ${c.niveis})</option>`)
+    .join("");
+  const id = await foundry.applications.api.DialogV2.prompt({
+    window: { title: "Qual classe sobe de nível?" },
+    content: `<select name="classe" style="width:100%">${opcoes}</select>`,
+    ok: { label: "Subir", callback: (event, button) => button.form.elements.classe.value }
+  });
+  return classes.find((c) => c.id === id) ?? null; // fechar o diálogo resolve null
+}
+
+async function subirNivel(message) {
+  const actor = await fromUuid(message.getFlag(MOD, "ator"));
+  const nivelAlvo = message.getFlag(MOD, "nivelAlvo");
+  if (!actor?.isOwner) return;
+  const n = actor.system.attributes.nivel;
+  // revalida: clique duplo, XP editado no meio, card velho
+  if (n.value >= nivelAlvo)
+    return ui.notifications.info(`${actor.name} já está no nível ${n.value}.`);
+  if (!podeSubir(n.value, n.xp.value, n.xp.proximo))
+    return ui.notifications.warn(`${actor.name} não tem mais XP para subir (o XP mudou?).`);
+  const classes = classesDe(actor.items);
+  if (!classes.length)
+    return ui.notifications.warn(`${actor.name} não tem nenhuma classe na ficha.`);
+  const escolhida = await escolherClasse(classes);
+  if (!escolhida) return;
+  await actor.items.get(escolhida.id).update({ "system.niveis": escolhida.niveis + 1 });
+  await ChatMessage.create({
+    content: `🎉 <b>${esc(actor.name)}</b> subiu para o nível ${nivelAlvo} (${esc(escolhida.nome)} ${escolhida.niveis + 1}). PV, PM e perícias novas: ajustar na ficha.`
+  });
+}
+
+Hooks.on("renderChatMessageHTML", (message, html) => {
+  const btn = html.querySelector(".t20tb-levelup");
+  if (!btn) return;
+  const uuid = message.getFlag(MOD, "ator");
+  const nivelAlvo = message.getFlag(MOD, "nivelAlvo");
+  if (!uuid) return btn.remove();
+  const actor = fromUuidSync(uuid);
+  if (!actor) return btn.remove();
+  if ((actor.system.attributes?.nivel?.value ?? 0) >= nivelAlvo) {
+    const feito = document.createElement("span");
+    feito.className = "t20tb-feito";
+    feito.textContent = `✔ nível ${nivelAlvo} alcançado`;
+    btn.replaceWith(feito);
+    return;
+  }
+  if (!actor.isOwner) return btn.remove();
+  btn.addEventListener("click", () => subirNivel(message));
 });

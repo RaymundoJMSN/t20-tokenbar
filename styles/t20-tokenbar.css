@@ -9,3 +9,14 @@
     margin-left: 2px;
     font-weight: bold;
 }
+
+/* Card de subir de nível no chat */
+.t20tb-card .t20tb-levelup {
+    display: block;
+    margin-top: 4px;
+}
+
+.t20tb-feito {
+    color: #6c6;
+    font-weight: bold;
+}
