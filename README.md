@@ -5,6 +5,9 @@ Não substitui o monks — os dois ficam ativos juntos.
 
 - **Sobe de nível de verdade.** No T20 o nível é derivado da soma de `system.niveis` dos itens
   `classe`; o monks só somava XP. Quando o XP estoura, sai um card sussurrado com botão.
+- **Marcos.** Botão 🏆 na tokenbar (só mestre): anuncia um nível alvo num card público e cada
+  jogador clica pra subir o próprio personagem (sem XP nenhum; o mestre pode subir personagem de
+  jogador ausente). Também via macro: `game.modules.get("t20-tokenbar").api.marco()`.
 - **Inspiração real.** Mostra o número de `flags.t20-inspiracao.pontos` na barra, e o mestre dá/tira
   pelo menu de contexto do token.
 - **Stats do mestre × do jogador.** Duas listas. Na do jogador, o stat `@estimate` vira o texto do

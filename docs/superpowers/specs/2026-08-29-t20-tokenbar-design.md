@@ -316,20 +316,41 @@ Checagens de `--check`:
 
 ---
 
+## Feature 6 — Marcos (adicionada 2026-08-29, pedido do Ray)
+
+A mesa normalmente usa **sistema de marcos**, não XP: o mestre decide quando todos sobem. O caminho
+por XP (Feature 5) continua existindo; marcos é um segundo gatilho pro mesmo núcleo.
+
+- **Botão 🏆 na tokenbar** (grupo extra via wrapper em `Tormenta20Rolls.prototype.getButtons`, só
+  GM — não há hook pra isso no monks) + `game.modules.get("t20-tokenbar").api.marco()` pra macro.
+- Diálogo pergunta o **nível alvo** (padrão = maior nível entre personagens de jogador + 1, cap 20)
+  e posta card **público** com flags `{ marco: true, nivelAlvo }` — sem `ator`, sem whisper, sem
+  gate no `send-levelup-whisper` (é ação explícita do mestre).
+- No clique, cada usuário sobe **o próprio personagem**: o atribuído (`game.user.character`) ou, se
+  não tiver, escolhe entre os que possui; o **GM** escolhe entre todos os personagens de jogador
+  (serve pra subir personagem de jogador ausente).
+- Nenhuma validação de XP — marco é fiat do mestre. Personagem N níveis atrás = N cliques, com
+  escolha de classe em cada um (o T20 exige a escolha por nível).
+- Estado derivado igual à Feature 5: personagem no alvo some das opções; quando **todos** os
+  personagens do usuário alcançam o alvo, o botão vira "✔ nível N alcançado". Refatoração: o miolo
+  (escolher classe → `+1` em `system.niveis` → confirmação pública) virou `subirUmNivel(actor)`,
+  usado pelos dois caminhos; o diálogo de select genérico virou `escolherOpcao`.
+
 ## Superfície de contato com o monks
 
 | Alvo | Tipo | Feature |
 |---|---|---|
 | `Tormenta20Rolls.prototype.getValue` | override | 4 |
 | `Tormenta20Rolls.prototype.assignXP` | override | 5 |
+| `Tormenta20Rolls.prototype.getButtons` | wrapper | 6 |
 | `EditStats` | subclasse | 1 |
 | `TokenBar.processStat` | chamada (sem patch) | 1 |
 | `renderTokenBar` | hook nativo | 1, 2, 3 |
 | `getTokenbarContextOptionsTokenBar` | hook nativo | 3 |
 | `updateActor` | hook nativo | 1, 3, 5 |
-| `renderChatMessageHTML` | hook nativo | 5 |
+| `renderChatMessageHTML` | hook nativo | 5, 6 |
 
-Dois patches. O resto é hook público ou classe estendida.
+Três patches (dois overrides e um wrapper). O resto é hook público ou classe estendida.
 
 ## Fora do escopo
 

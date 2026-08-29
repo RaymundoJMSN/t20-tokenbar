@@ -62,7 +62,22 @@ function patchesDoSistema() {
       "system.attributes.nivel.xp.value": atual + (Number(msgactor.xp) || 0)
     });
   };
+
+  /* Botão 🏆 na tokenbar (só GM): anuncia um marco — card público pra todo mundo subir. */
+  const getButtonsOriginal = Tormenta20Rolls.prototype.getButtons;
+  Tormenta20Rolls.prototype.getButtons = function () {
+    const grupos = getButtonsOriginal.call(this);
+    if (game.user.isGM)
+      grupos.push([{ id: "t20tb-marco", title: "Marco: oferecer nível a todos", icon: "fa-angles-up", click: marco }]);
+    return grupos;
+  };
 }
+
+/* Macro/console: game.modules.get("t20-tokenbar").api.marco() */
+Hooks.once("ready", () => {
+  const mod = game.modules.get(MOD);
+  if (mod) mod.api = { marco };
+});
 
 /* ---- Editor da lista de stats dos jogadores (reusa o EditStats do monks inteiro) ----
    Overrides mínimos e por quê:
@@ -274,55 +289,108 @@ Hooks.on("updateActor", (actor, changes) => {
     verificarNivel(actor);
 });
 
-async function escolherClasse(classes) {
-  if (classes.length === 1) return classes[0];
-  const opcoes = classes
-    .map((c) => `<option value="${c.id}">${esc(c.nome)} (nível ${c.niveis})</option>`)
-    .join("");
+async function escolherOpcao(titulo, rotuloOk, opcoes) {
+  if (opcoes.length === 1) return opcoes[0];
+  const html = opcoes.map((o) => `<option value="${o.id}">${esc(o.label)}</option>`).join("");
   const id = await foundry.applications.api.DialogV2.prompt({
-    window: { title: "Qual classe sobe de nível?" },
-    content: `<select name="classe" style="width:100%">${opcoes}</select>`,
-    ok: { label: "Subir", callback: (event, button) => button.form.elements.classe.value }
+    window: { title: titulo },
+    content: `<select name="opcao" style="width:100%">${html}</select>`,
+    ok: { label: rotuloOk, callback: (event, button) => button.form.elements.opcao.value }
   });
-  return classes.find((c) => c.id === id) ?? null; // fechar o diálogo resolve null
+  return opcoes.find((o) => o.id === id) ?? null; // fechar o diálogo resolve null
 }
 
-async function subirNivel(message) {
-  const actor = await fromUuid(message.getFlag(MOD, "ator"));
-  const nivelAlvo = message.getFlag(MOD, "nivelAlvo");
-  if (!actor?.isOwner) return;
-  const n = actor.system.attributes.nivel;
-  // revalida: clique duplo, XP editado no meio, card velho
-  if (n.value >= nivelAlvo)
-    return ui.notifications.info(`${actor.name} já está no nível ${n.value}.`);
-  if (!podeSubir(n.value, n.xp.value, n.xp.proximo))
-    return ui.notifications.warn(`${actor.name} não tem mais XP para subir (o XP mudou?).`);
+/* Núcleo do +1: escolhe a classe (se multiclasse) e aplica. */
+async function subirUmNivel(actor) {
+  const nivelAlvo = (Number(actor.system.attributes?.nivel?.value) || 0) + 1;
   const classes = classesDe(actor.items);
   if (!classes.length)
     return ui.notifications.warn(`${actor.name} não tem nenhuma classe na ficha.`);
-  const escolhida = await escolherClasse(classes);
-  if (!escolhida) return;
+  const op = await escolherOpcao("Qual classe sobe de nível?", "Subir",
+    classes.map((c) => ({ id: c.id, label: `${c.nome} (nível ${c.niveis})` })));
+  if (!op) return;
+  const escolhida = classes.find((c) => c.id === op.id);
   await actor.items.get(escolhida.id).update({ "system.niveis": escolhida.niveis + 1 });
   await ChatMessage.create({
     content: `🎉 <b>${esc(actor.name)}</b> subiu para o nível ${nivelAlvo} (${esc(escolhida.nome)} ${escolhida.niveis + 1}). PV, PM e perícias novas: ajustar na ficha.`
   });
 }
 
+/* Caminho por XP: revalida (clique duplo, XP editado no meio, card velho) e aplica. */
+async function subirNivel(message) {
+  const actor = await fromUuid(message.getFlag(MOD, "ator"));
+  const nivelAlvo = message.getFlag(MOD, "nivelAlvo");
+  if (!actor?.isOwner) return;
+  const n = actor.system.attributes.nivel;
+  if (n.value >= nivelAlvo)
+    return ui.notifications.info(`${actor.name} já está no nível ${n.value}.`);
+  if (!podeSubir(n.value, n.xp.value, n.xp.proximo))
+    return ui.notifications.warn(`${actor.name} não tem mais XP para subir (o XP mudou?).`);
+  return subirUmNivel(actor);
+}
+
+/* ---- Marcos: o mestre anuncia, todo mundo clica ----
+   Sem XP nenhum — o card público diz o nível alvo e cada clique dá +1 no personagem do
+   usuário (o mestre pode subir personagem de jogador ausente). Personagem 2 níveis atrás =
+   2 cliques, com escolha de classe em cada um, como o T20 pede. */
+const meusPersonagens = () => {
+  if (!game.user.isGM && game.user.character?.type === "character") return [game.user.character];
+  return game.actors.filter((a) => a.type === "character" &&
+    (game.user.isGM ? a.hasPlayerOwner : a.testUserPermission(game.user, "OWNER")));
+};
+
+async function marco() {
+  const personagens = game.actors.filter((a) => a.type === "character" && a.hasPlayerOwner);
+  const padrao = Math.min(20,
+    Math.max(1, ...personagens.map((a) => Number(a.system.attributes?.nivel?.value) || 1)) + 1);
+  const alvo = await foundry.applications.api.DialogV2.prompt({
+    window: { title: "Marco — subir de nível" },
+    content: `<p>Todos os jogadores poderão subir até:</p><input type="number" name="alvo" value="${padrao}" min="2" max="20" step="1" style="width:100%">`,
+    ok: { label: "Anunciar", callback: (event, button) => Number(button.form.elements.alvo.value) }
+  });
+  if (!alvo || alvo < 2 || alvo > 20) return;
+  await ChatMessage.create({
+    content: `<div class="t20tb-card">🏆 <b>Marco alcançado!</b> Subam para o nível ${alvo}. <button type="button" class="t20tb-levelup">Subir de nível</button></div>`,
+    flags: { [MOD]: { marco: true, nivelAlvo: alvo } }
+  });
+}
+
+async function subirPorMarco(message) {
+  const alvo = message.getFlag(MOD, "nivelAlvo");
+  const abaixo = meusPersonagens()
+    .filter((a) => (Number(a.system.attributes?.nivel?.value) || 0) < alvo);
+  if (!abaixo.length)
+    return ui.notifications.info("Nenhum personagem seu abaixo do marco.");
+  const op = await escolherOpcao("Quem sobe de nível?", "Subir",
+    abaixo.map((a) => ({ id: a.id, label: `${a.name} (nível ${a.system.attributes?.nivel?.value ?? "?"})` })));
+  if (!op) return;
+  return subirUmNivel(game.actors.get(op.id));
+}
+
 Hooks.on("renderChatMessageHTML", (message, html) => {
   const btn = html.querySelector(".t20tb-levelup");
   if (!btn) return;
-  const uuid = message.getFlag(MOD, "ator");
-  const nivelAlvo = message.getFlag(MOD, "nivelAlvo");
-  if (!uuid) return btn.remove();
-  const actor = fromUuidSync(uuid);
-  if (!actor) return btn.remove();
-  if ((actor.system.attributes?.nivel?.value ?? 0) >= nivelAlvo) {
-    const feito = document.createElement("span");
-    feito.className = "t20tb-feito";
-    feito.textContent = `✔ nível ${nivelAlvo} alcançado`;
-    btn.replaceWith(feito);
+  const f = message.flags?.[MOD];
+  if (!f?.nivelAlvo) return btn.remove();
+  const feito = () => {
+    const span = document.createElement("span");
+    span.className = "t20tb-feito";
+    span.textContent = `✔ nível ${f.nivelAlvo} alcançado`;
+    btn.replaceWith(span);
+  };
+
+  if (f.marco) {
+    const meus = meusPersonagens();
+    if (!meus.length) return btn.remove(); // espectador sem personagem
+    if (meus.every((a) => (Number(a.system.attributes?.nivel?.value) || 0) >= f.nivelAlvo))
+      return feito();
+    btn.addEventListener("click", () => subirPorMarco(message));
     return;
   }
+
+  const actor = f.ator ? fromUuidSync(f.ator) : null;
+  if (!actor) return btn.remove();
+  if ((actor.system.attributes?.nivel?.value ?? 0) >= f.nivelAlvo) return feito();
   if (!actor.isOwner) return btn.remove();
   btn.addEventListener("click", () => subirNivel(message));
 });
