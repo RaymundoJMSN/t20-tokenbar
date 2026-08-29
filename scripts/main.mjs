@@ -81,15 +81,16 @@ Hooks.once("ready", () => {
 
 /* ---- Editor da lista de stats dos jogadores (reusa o EditStats do monks inteiro) ----
    Overrides mínimos e por quê:
-   - construtor passa {} (não null) — onSubmitForm/resetDefaults do monks fazem
-     Object.keys(this.object), que explode com null;
-   - onSubmitForm do pai gravaria em monks-tokenbar.stats (a lista do MESTRE) quando o
-     objeto é vazio — o nosso grava no nosso setting;
+   - construtor passa undefined — o pai faz object?.getFlag(...), e {} quebraria
+     ({}?.getFlag NÃO curto-circuita: vira undefined() → TypeError). Os métodos do pai
+     que fariam Object.keys(this.object) são justamente os dois sobrescritos abaixo;
+   - onSubmitForm do pai gravaria em monks-tokenbar.stats (a lista do MESTRE) quando não
+     há ator — o nosso grava no nosso setting;
    - resetDefaults aqui = lista vazia = jogadores voltam a ver a lista do mestre;
    - get title() — o pai tem getter que ignora window.title das options. */
 class EditStatsJogador extends EditStats {
   constructor(object, options = {}) {
-    super({}, options);
+    super(undefined, options);
     const salvos = game.settings.get(MOD, "stats-jogador");
     this.stats = (Array.isArray(salvos) ? foundry.utils.duplicate(salvos) : [])
       .map((s) => ({ ...s, id: s.id || foundry.utils.randomID() }));
