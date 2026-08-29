@@ -117,15 +117,36 @@ class EditStatsJogador extends EditStats {
     this.stats = [];
     this.render(true);
   }
+
+  /* Todo o CSS do editor no monks é escopado por #editstats (id da janela). Trocar só o id
+     do DOM devolve a tabela/typeahead inteiros; o registro de apps segue "editstats-jogador". */
+  async _onRender(context, options) {
+    await super._onRender(context, options);
+    this.element.id = "editstats";
+  }
 }
 
 /* ---- Estimativa do healthEstimate ----
-   null = módulo ausente, token fora do canvas, sem PV numérico, ou escondido pelas regras do
-   próprio healthEstimate (espelha _handleOverlay — senão o mod vira bypass da visibilidade). */
-function estimativa(tokenDoc) {
+   null = módulo ausente, sem PV numérico, ou escondido pelas regras do próprio
+   healthEstimate (espelha _handleOverlay — senão o mod vira bypass da visibilidade). */
+function estimativa(tokenDoc, actor) {
   const he = game.healthEstimate;
-  const t = tokenDoc?.object; // getEstimation exige o placeable, não o TokenDocument
-  if (!he || !t?.actor) return null;
+  if (!he) return null;
+  let t = tokenDoc?.object; // getEstimation espera o placeable...
+  if (!t?.actor) {
+    /* ...mas personagem da party sem token na cena atual também merece estimativa.
+       ponytail: shim mínimo — o caminho todo (fraction do provider T20, getStage,
+       isDead, hideEstimate, breakOverlayRender) só toca token.actor,
+       token.document.getFlag/disposition/isSecret e token.combatant. */
+    const a = actor ?? tokenDoc?.actor;
+    if (!a) return null;
+    t = {
+      actor: a,
+      name: a.name,
+      combatant: null,
+      document: tokenDoc ?? { getFlag: () => undefined, disposition: 1, isSecret: false }
+    };
+  }
   try {
     if (he.breakOverlayRender(t)) return null;
     if (!game.user.isGM && he.hideEstimate(t)) return null;
@@ -163,7 +184,7 @@ Hooks.on("renderTokenBar", (app, element) => {
     const id = li.dataset.tokenId || li.dataset.actorId;
     const entry = app.entries.find((e) => e.token?.id === id || e.actor?.id === id);
     if (!entry?.actor) continue;
-    const est = estimativa(entry.token);
+    const est = estimativa(entry.token, entry.actor);
 
     if (temLista) {
       const bloco = li.querySelector(".token-stats");
