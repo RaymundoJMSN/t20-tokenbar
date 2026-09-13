@@ -3,15 +3,47 @@
   "title": "T20 TokenBar",
   "description": "Mod do Monk's TokenBar para Tormenta20: sobe de nível de verdade, mostra a inspiração do t20-inspiracao, e dá aos jogadores uma lista de stats própria com o texto do Health Estimate no lugar do PV exato.",
   "version": "1.0.0",
-  "compatibility": { "minimum": "13", "verified": "13" },
+  "compatibility": {
+    "minimum": "13",
+    "verified": "13"
+  },
   "relationships": {
-    "requires": [{ "id": "monks-tokenbar", "type": "module" }],
-    "systems": [{ "id": "tormenta20", "type": "system" }]
+    "requires": [
+      {
+        "id": "monks-tokenbar",
+        "type": "module"
+      }
+    ],
+    "systems": [
+      {
+        "id": "tormenta20",
+        "type": "system"
+      }
+    ]
   },
-  "esmodules": ["scripts/main.mjs"],
-  "styles": ["styles/t20-tokenbar.css"],
+  "esmodules": [
+    "scripts/main.mjs"
+  ],
+  "styles": [
+    "styles/t20-tokenbar.css"
+  ],
   "flags": {
-    "hotReload": { "extensions": ["css"], "paths": ["styles/t20-tokenbar.css"] }
+    "hotReload": {
+      "extensions": [
+        "css"
+      ],
+      "paths": [
+        "styles/t20-tokenbar.css"
+      ]
+    }
   },
-  "authors": [{ "name": "Ray" }]
+  "authors": [
+    {
+      "name": "RaymundoNeto",
+      "url": "https://github.com/RaymundoJMSN"
+    }
+  ],
+  "url": "https://github.com/RaymundoJMSN/t20-tokenbar",
+  "manifest": "https://raw.githubusercontent.com/RaymundoJMSN/t20-tokenbar/main/module.json",
+  "download": "https://github.com/RaymundoJMSN/t20-tokenbar/archive/refs/heads/main.zip"
 }
